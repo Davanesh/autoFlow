@@ -1,34 +1,65 @@
-import React from "react";
+import React, { useRef } from "react";
+import { ArrowRight } from "lucide-react";
 
-export default function NodeCard({ node, onDelete }) {
-  // inline style for position
-  const style = {
-    left: node.x,
-    top: node.y,
-    width: node.width,
-    height: node.height,
-  };
+const NodeCard = ({
+  node,
+  onMouseDown,
+  onClick,
+  onDelete,
+  onStartConnection,
+  isSelected,
+}) => {
+  const nodeRef = useRef(null);
 
   return (
     <div
-      className="absolute p-2 select-none rounded-2xl shadow cursor-grab"
-      style={style}
-      onMouseDown={(e) => e.stopPropagation()}
+      ref={nodeRef}
+      onMouseDown={(e) => onMouseDown?.(e, node.id)}
+      onClick={(e) => onClick?.(e, node.id)}
+      style={{
+        position: "absolute",
+        left: `${node.x}px`,
+        top: `${node.y}px`,
+        width: `${node.width}px`,
+        height: `${node.height}px`,
+        userSelect: "none",
+        backgroundColor: node.color || "#ffffff", // ✅ Add this line
+        transition: "background-color 0.2s ease",
+      }}
+      className={`rounded-lg shadow-md border ${
+        isSelected ? "ring-2 ring-blue-400" : "border-gray-200"
+      }`}
     >
-      <div className="w-full h-full flex items-center justify-center bg-white border border-gray-200 rounded-xl">
-        <div className="text-sm font-semibold">{node.label}</div>
-      </div>
+      <div className="relative p-3 w-full h-full cursor-grab active:cursor-grabbing">
+        <h3 className="text-sm font-semibold text-gray-800 truncate">
+          {node.label || "Untitled Node"}
+        </h3>
 
-      <button
-        onClick={(ev) => {
-          ev.stopPropagation();
-          onDelete();
-        }}
-        className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center shadow"
-        title="Delete"
-      >
-        ×
-      </button>
+        {/* Arrow connector */}
+        <button
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            onStartConnection?.(node.id);
+          }}
+          className="absolute right-[-12px] top-1/2 -translate-y-1/2 bg-blue-500 text-white p-2 rounded-full shadow-md hover:bg-blue-600 active:scale-95 transition"
+        >
+          <ArrowRight size={14} />
+        </button>
+
+        {/* Delete button */}
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete?.(node.id);
+          }}
+          className="absolute -top-2 -left-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white text-sm font-bold hover:bg-red-600 transition"
+        >
+          ×
+        </button>
+      </div>
     </div>
   );
-}
+};
+
+export default NodeCard;

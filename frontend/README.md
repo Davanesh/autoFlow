@@ -35,3 +35,11 @@ frontend/
     ├── App.jsx                 # root component
     ├── main.jsx                # app entry
     └── index.css               # Tailwind imports
+
+
+Next step
+
+A. Add node dragging inside the canvas (move nodes with mouse).
+B. Add connectors (SVG lines) between nodes.
+C. Build the properties panel to edit node text/props.
+D. Replace the simple drag/drop with react-dnd for better UX.
