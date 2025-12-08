@@ -5,10 +5,9 @@ import (
 	"log"
 )
 
-
 /*
 ----------------------------------------------------
-    EXECUTION ENGINE
+    EXECUTION ENGINE  (PATCHED WITH DATA PIPELINING)
 ----------------------------------------------------
 */
 
@@ -29,39 +28,62 @@ func RunWorkflow(g *ExecGraph) error {
 			return errors.New("node not found: " + current)
 		}
 
-		var nextOverride string
-		var err error
-
 		executor, err := GetExecutor(n.Type)
 		if err != nil {
-				return errors.New("no executor for node type: " + n.Type)
+			return errors.New("no executor for node type: " + n.Type)
 		}
 
-		nextOverride, err = executor.Execute(n, g)
-
+		// Execute node
+		nextOverride, err := executor.Execute(n, g)
 		if err != nil {
 			n.Status = "failed"
 			log.Printf("❌ Node failed: %s (%v)", n.ID, err)
 			return err
 		}
 
-		// If decision returned a target → follow it
+		// If node has exactly one next node, pass output -> next.input
+		// DATA PIPELINING
+if len(n.Next) == 1 {
+    nextNodeID := n.Next[0]
+    if nextNode, ok := g.Nodes[nextNodeID]; ok {
+
+        log.Println("📤 Passing data FROM:", n.ID, "TO:", nextNodeID)
+
+        if out, exists := n.Data["output"]; exists {
+
+            log.Println("   └─ output:", out)
+
+            if nextNode.Data == nil {
+                nextNode.Data = map[string]interface{}{}
+            }
+            nextNode.Data["input"] = out
+
+            log.Println("📥 next.input =", nextNode.Data["input"])
+        } else {
+            log.Println("⚠️ NO output found in node:", n.ID)
+        }
+    }
+}
+
+
+		// If EXECUTOR decided next node → override
 		if nextOverride != "" {
 			current = nextOverride
 			continue
 		}
 
-		// No more next nodes → workflow ends
+		// No next nodes → end of workflow
 		if len(n.Next) == 0 {
 			log.Println("🏁 Workflow complete!")
 			return nil
 		}
 
-		// Non-decision nodes should only have 1 next
+		// Normal nodes must have only 1 next
 		if len(n.Next) > 1 {
 			return errors.New("node has multiple next branches but is not a decision: " + n.ID)
 		}
 
+		// Move forward
 		current = n.Next[0]
 	}
 }
