@@ -1,1 +1,4 @@
 backend/orchestrator/.env
+/venom-service/node_modules
+/venom-service/package-lock.json
+venom-service/tokens

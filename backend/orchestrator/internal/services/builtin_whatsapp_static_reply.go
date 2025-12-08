@@ -2,7 +2,8 @@ package services
 
 import (
 	"fmt"
-	wapp "github.com/Davanesh/auto-orchestrator/internal/executors"
+	"regexp"
+	"strings"
 )
 
 func init() {
@@ -11,36 +12,44 @@ func init() {
 
 type WhatsAppStaticReplyExecutor struct{}
 
-// STATIC REPLY NODE:
-// 1) Takes incoming message from input OR output
-// 2) Applies regex + template
-// 3) Saves formatted response into output
 func (e *WhatsAppStaticReplyExecutor) Execute(n *ExecNode, g *ExecGraph) (string, error) {
 	n.Status = "running"
 
-	// PATCH: Determine input (try input → fallback to output)
-	input := ""
-	if v, ok := n.Data["input"]; ok && v != nil {
-		input = fmt.Sprintf("%v", v)
+	// input can come from previous node in graph (n.Data["input"]) or from wait node output
+	input := fmt.Sprintf("%v", n.Data["input"])
+	if input == "" {
+		input = fmt.Sprintf("%v", n.Data["body"])
 	}
 	if input == "" {
-		if v, ok := n.Data["output"]; ok && v != nil {
-			input = fmt.Sprintf("%v", v)
-		}
+		input = fmt.Sprintf("%v", n.Data["output"])
 	}
 
 	regex := fmt.Sprintf("%v", n.Data["match_regex"])
 	template := fmt.Sprintf("%v", n.Data["reply_template"])
 
-	out, err := wapp.BuildStaticReply(regex, template, input)
-	if err != nil {
-		n.Status = "failed"
-		return "", err
+	out := ""
+	if strings.TrimSpace(regex) == "" {
+		out = strings.ReplaceAll(template, "${body}", input)
+	} else {
+		re, err := regexp.Compile(regex)
+		if err != nil {
+			n.Status = "failed"
+			return "", err
+		}
+		matches := re.FindStringSubmatch(input)
+		if matches == nil {
+			// no match -> fallback: template with ${body}
+			out = strings.ReplaceAll(template, "${body}", input)
+		} else {
+			out = template
+			for i := 1; i < len(matches); i++ {
+				out = strings.ReplaceAll(out, fmt.Sprintf("${%d}", i), matches[i])
+			}
+			out = strings.ReplaceAll(out, "${body}", input)
+		}
 	}
 
-	// PATCH: Save final message to output
 	n.Data["output"] = out
 	n.Status = "done"
-
 	return "", nil
 }

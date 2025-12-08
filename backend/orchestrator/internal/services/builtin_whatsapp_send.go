@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	wapp "github.com/Davanesh/auto-orchestrator/internal/executors"
 )
@@ -13,89 +14,38 @@ func init() {
 
 type WhatsAppSendExecutor struct{}
 
-// WHATSAPP SEND NODE:
-// mode = "static" → use template + regex
-// mode = "ai" → generate using internal AI node
-// Finally sends via Twilio and stores final output.
 func (e *WhatsAppSendExecutor) Execute(n *ExecNode, g *ExecGraph) (string, error) {
 	n.Status = "running"
 
-	//---------------------------------------------
-	// 1) Read destination number
-	//---------------------------------------------
 	to := fmt.Sprintf("%v", n.Data["to"])
 	if to == "" {
+		// try to pull 'from' or 'recipient' keys
+		to = fmt.Sprintf("%v", n.Data["recipient"])
+	}
+	if to == "" {
 		n.Status = "failed"
-		return "", errors.New("missing 'to' in whatsapp_send node")
+		return "", errors.New("whatsapp_send missing 'to'")
 	}
 
-	//---------------------------------------------
-	// 2) Determine input message
-	//---------------------------------------------
-	input := ""
-	if v, ok := n.Data["input"]; ok && v != nil {
-		input = fmt.Sprintf("%v", v)
+	// prefer explicit output > input
+	body := fmt.Sprintf("%v", n.Data["output"])
+	if body == "" {
+		body = fmt.Sprintf("%v", n.Data["input"])
 	}
-	if input == "" {
-		if v, ok := n.Data["output"]; ok && v != nil {
-			input = fmt.Sprintf("%v", v)
-		}
+	if body == "" {
+		body = "(empty message)"
 	}
 
-	if input == "" {
-		input = "(empty input)"
-	}
-
-	//---------------------------------------------
-	// 3) Mode selection: "static" or "ai"
-	//---------------------------------------------
-	mode := "static"
-	if v, ok := n.Data["mode"]; ok && v != nil {
-		mode = fmt.Sprintf("%v", v)
-	}
-
-	regex := fmt.Sprintf("%v", n.Data["match_regex"])
-	template := fmt.Sprintf("%v", n.Data["reply_template"])
-
-	var finalOut string
-	var err error
-
-	if mode == "static" {
-		// Use static reply builder
-		finalOut, err = wapp.BuildStaticReply(regex, template, input)
-		if err != nil {
-			n.Status = "failed"
-			return "", err
-		}
-	} else if mode == "ai" {
-		// AI GENERATED MODE
-		finalOut, err = wapp.ExecuteWhatsAppSendNode(to, "ai", "", template, input)
-		if err != nil {
-			n.Status = "failed"
-			return "", err
-		}
-		// Already sent in ExecuteWhatsAppSendNode, so skip sending again
-		n.Data["output"] = finalOut
-		n.Status = "done"
-		return "", nil
-	} else {
-		n.Status = "failed"
-		return "", errors.New("unknown mode in whatsapp_send node")
-	}
-
-	//---------------------------------------------
-	// 4) Send via Twilio
-	//---------------------------------------------
-	err = wapp.SendWhatsAppMessage(to, finalOut)
+	// normalize to format venom expects (we use SendWhatsAppMessage wrapper)
+	// venom expects plain number (no prefix) or will handle +, whatsapp:
+	err := wapp.SendWhatsAppMessage(to, body)
 	if err != nil {
 		n.Status = "failed"
-		return "", err
+		return "", fmt.Errorf("send failed: %w", err)
 	}
 
-	//---------------------------------------------
-	// 5) Save final output
-	//---------------------------------------------
-	n.Data["output"] = finalOut
+	log.Printf("📤 WhatsApp sent to=%s body=%s", to, body)
+
 	n.Status = "done"
 	return "", nil
 }

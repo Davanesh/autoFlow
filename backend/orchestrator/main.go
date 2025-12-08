@@ -3,12 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/http"
-	"os"
 
 	"github.com/Davanesh/auto-orchestrator/internal/api"
 	"github.com/Davanesh/auto-orchestrator/internal/db"
-	"github.com/Davanesh/auto-orchestrator/internal/executors" // IMPORTANT: kept for webhook handler
+	"github.com/Davanesh/auto-orchestrator/internal/executors"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -16,29 +14,12 @@ import (
 
 func main() {
 
-	// -------------------------------
-	// 1) Load Environment Variables
-	// -------------------------------
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("⚠️  Warning: .env file not found, using system env")
-	}
+	_ = godotenv.Load()
 
-	log.Println("🔑 OPENAI_KEY Loaded:", os.Getenv("OPENAI_API_KEY") != "")
-	log.Println("🔑 TWILIO SID Loaded:", os.Getenv("TWILIO_SID") != "")
-	log.Println("🔑 ALLOWED_WHATSAPP_NUMBER:", os.Getenv("ALLOWED_WHATSAPP_NUMBER"))
-
-	// -------------------------------
-	// 2) Initialize Database
-	// -------------------------------
 	db.InitDB()
 
-	// -------------------------------
-	// 3) Setup Gin Server
-	// -------------------------------
 	r := gin.Default()
 
-	// CORS setup
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -46,31 +27,17 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// -------------------------------
-	// 4) Basic Health Route
-	// -------------------------------
 	r.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "AutoFlow.AI Orchestrator is running",
-		})
+		c.JSON(200, gin.H{"message": "AutoFlow.AI Orchestrator Running"})
 	})
 
-	// -------------------------------
-	// 5) Workflow Routes
-	// -------------------------------
 	api.RegisterWorkflowRoutes(r)
 
-	// -------------------------------
-	// 6) WhatsApp Webhook Route
-	// -------------------------------
-	r.POST("/webhook/whatsapp", func(c *gin.Context) {
-		// Use our executor handler (converted to Gin)
-		executors.HandleWhatsAppWebhookGin(c)
-	})
+	// VENOM webhook integration
+r.POST("/webhook/whatsapp", func(c *gin.Context) {
+    executors.HandleWhatsAppWebhook(c.Writer, c.Request)
+})
 
-	// -------------------------------
-	// 7) Start the Server (async)
-	// -------------------------------
 	go func() {
 		log.Println("🚀 Orchestrator running on port 8080...")
 		if err := r.Run(":8080"); err != nil {
@@ -78,13 +45,9 @@ func main() {
 		}
 	}()
 
-	// -------------------------------
-	// 8) Print all Registered Routes
-	// -------------------------------
-	for _, route := range r.Routes() {
-		fmt.Println(route.Method, route.Path)
+	for _, rt := range r.Routes() {
+		fmt.Println(rt.Method, rt.Path)
 	}
 
-	// Keep process alive
 	select {}
 }

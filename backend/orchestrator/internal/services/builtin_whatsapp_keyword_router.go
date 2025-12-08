@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	wapp "github.com/Davanesh/auto-orchestrator/internal/executors"
@@ -17,68 +18,51 @@ type WhatsAppKeywordRouterExecutor struct{}
 func (e *WhatsAppKeywordRouterExecutor) Execute(n *ExecNode, g *ExecGraph) (string, error) {
 	n.Status = "running"
 
+	rawKeywords, ok := n.Data["keywords"]
+	if !ok {
+		return "", errors.New("keyword router missing 'keywords'")
+	}
+	kwMap, ok := rawKeywords.(map[string]interface{})
+	if !ok {
+		return "", errors.New("'keywords' must be an object map")
+	}
+
+	fallback := fmt.Sprintf("%v", n.Data["fallback_message"])
+	if fallback == "" {
+		fallback = "I didn't understand — try again."
+	}
+
 	runID := g.RunID
 	nodeID := n.ID
 
-	//--------------------------------------------
-	// 1) Load keyword map
-	//--------------------------------------------
-	rawKeywords, ok := n.Data["keywords"]
-	if !ok {
-		return "", errors.New("keyword_router node missing 'keywords'")
-	}
-
-	keywordMap, ok := rawKeywords.(map[string]interface{})
-	if !ok {
-		return "", errors.New("'keywords' must be a map")
-	}
-
-	//--------------------------------------------
-	// 2) Load fallback message
-	//--------------------------------------------
-	fallback := fmt.Sprintf("%v", n.Data["fallback_message"])
-	if fallback == "" {
-		fallback = "Invalid choice. Try again."
-	}
-
-	//--------------------------------------------
-	// 3) Wait for incoming message
-	//--------------------------------------------
 	msg, err := wapp.WaitForWhatsAppMessage(runID, nodeID, 0)
 	if err != nil {
 		n.Status = "failed"
 		return "", err
 	}
+	lmsg := strings.ToLower(strings.TrimSpace(msg))
 
-	lowerMsg := strings.ToLower(strings.TrimSpace(msg))
-
-	//--------------------------------------------
-	// 4) Try to match keywords
-	//--------------------------------------------
-	for key, nextNode := range keywordMap {
-		// key may contain comma-separated keywords
-		group := strings.Split(key, ",")
-		for _, word := range group {
-			keyword := strings.ToLower(strings.TrimSpace(word))
-
-			// match: exact OR contains
-			if lowerMsg == keyword || strings.Contains(lowerMsg, keyword) {
+	// iterate key groups
+	for k, target := range kwMap {
+		parts := strings.Split(k, ",")
+		for _, p := range parts {
+			p = strings.ToLower(strings.TrimSpace(p))
+			if p == "" {
+				continue
+			}
+			if lmsg == p || strings.Contains(lmsg, p) {
 				n.Status = "done"
-				return fmt.Sprintf("%v", nextNode), nil
+				return fmt.Sprintf("%v", target), nil
 			}
 		}
 	}
 
-	//--------------------------------------------
-	// 5) No match → send fallback message
-	//--------------------------------------------
-	from := fmt.Sprintf("%v", n.Data["from"])
-	if from != "" {
-		wapp.SendWhatsAppMessage(from, fallback)
+	// no match
+	to := fmt.Sprintf("%v", n.Data["from"])
+	if to != "" {
+		_ = wapp.SendWhatsAppMessage(to, fallback)
+	} else {
+		log.Printf("⚠ keyword_router no sender to send fallback")
 	}
-
-	//--------------------------------------------
-	// Loop again (re-run same node)
-	//--------------------------------------------
 	return n.ID, nil
 }

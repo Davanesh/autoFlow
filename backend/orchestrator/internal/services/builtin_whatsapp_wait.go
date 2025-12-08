@@ -1,38 +1,53 @@
 package services
 
 import (
+	"log"
+	"strconv"
+
 	wapp "github.com/Davanesh/auto-orchestrator/internal/executors"
 )
 
+// Register wait node executor
 func init() {
 	RegisterExecutor("whatsapp_wait", &WhatsAppWaitExecutor{})
 }
 
 type WhatsAppWaitExecutor struct{}
 
-// WAIT NODE:
-// 1) Waits for incoming WhatsApp message
-// 2) Stores that message inside n.Data["output"]
-// 3) Marks node done
 func (e *WhatsAppWaitExecutor) Execute(n *ExecNode, g *ExecGraph) (string, error) {
-	n.Status = "waiting"
+	n.Status = "running"
 
-	// Get timeout (0 = infinite)
+	// get timeoutSeconds from node data (if present)
 	timeout := 0
 	if v, ok := n.Data["timeoutSeconds"]; ok {
-		timeout = int(v.(float64))
+		switch t := v.(type) {
+		case float64:
+			timeout = int(t)
+		case string:
+			if iv, err := strconv.Atoi(t); err == nil {
+				timeout = iv
+			}
+		case int:
+			timeout = t
+		}
 	}
 
-	// WAIT FOR WHATSAPP MESSAGE
-	msg, err := wapp.WaitForWhatsAppMessage(g.RunID, n.ID, timeout)
+	// Use graph.RunID and node.ID to register waiter
+	runID := g.RunID
+	nodeID := n.ID
+
+	log.Printf("⏳ Waiting for WhatsApp message (run=%s node=%s timeout=%d)", runID, nodeID, timeout)
+
+	msg, err := wapp.WaitForWhatsAppMessage(runID, nodeID, timeout)
 	if err != nil {
 		n.Status = "failed"
 		return "", err
 	}
 
-	// PATCH: save incoming message inside output
+	// store incoming message into node.Data["output"] or ["input"] for next node
 	n.Data["output"] = msg
 	n.Status = "done"
 
+	// No direct override — engine will use n.Next[0]
 	return "", nil
 }

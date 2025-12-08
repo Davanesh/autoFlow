@@ -1,9 +1,10 @@
 package services
 
 import (
-	"fmt"
-	"strings"
 	"errors"
+	"fmt"
+	"log"
+	"strings"
 
 	wapp "github.com/Davanesh/auto-orchestrator/internal/executors"
 )
@@ -17,56 +18,50 @@ type WhatsAppQuickReplyExecutor struct{}
 func (e *WhatsAppQuickReplyExecutor) Execute(n *ExecNode, g *ExecGraph) (string, error) {
 	n.Status = "running"
 
+	// options expected as map[string]interface{} : "1": "nodeA", "2": "nodeB"
+	rawOptions, ok := n.Data["options"]
+	if !ok {
+		return "", errors.New("quick reply missing options")
+	}
+	opts, ok := rawOptions.(map[string]interface{})
+	if !ok {
+		return "", errors.New("options must be object")
+	}
+
+	fallback := fmt.Sprintf("%v", n.Data["invalid_message"])
+	if fallback == "" {
+		fallback = "Invalid option. Try again."
+	}
+
 	runID := g.RunID
 	nodeID := n.ID
 
-	//---------------------------------------
-	// 1) Load options (expected replies)
-	//---------------------------------------
-	rawOptions, ok := n.Data["options"]
-	if !ok {
-		return "", errors.New("quick reply node missing 'options'")
-	}
-
-	optionsMap, ok := rawOptions.(map[string]interface{})
-	if !ok {
-		return "", errors.New("'options' must be a map")
-	}
-
-	//---------------------------------------
-	// 2) Load fallback message
-	//---------------------------------------
-	invalidMessage := fmt.Sprintf("%v", n.Data["invalid_message"])
-	if invalidMessage == "" {
-		invalidMessage = "Invalid reply. Please try again."
-	}
-
-	//---------------------------------------
-	// 3) Wait for actual WhatsApp message
-	//---------------------------------------
+	// wait
 	msg, err := wapp.WaitForWhatsAppMessage(runID, nodeID, 0)
 	if err != nil {
 		n.Status = "failed"
 		return "", err
 	}
+	msgNorm := strings.TrimSpace(strings.ToLower(msg))
 
-	msg = strings.TrimSpace(strings.ToLower(msg))
-
-	//---------------------------------------
-	// 4) Check if user reply matches a key
-	//---------------------------------------
-	for key, nextName := range optionsMap {
-		if strings.ToLower(key) == msg {
+	// match
+	for k, v := range opts {
+		if strings.ToLower(strings.TrimSpace(k)) == msgNorm {
+			// return target node id (string)
+			target := fmt.Sprintf("%v", v)
 			n.Status = "done"
-			return fmt.Sprintf("%v", nextName), nil
+			return target, nil
 		}
 	}
 
-	//---------------------------------------
-	// 5) If invalid → send fallback
-	//---------------------------------------
-	wapp.SendWhatsAppMessage(n.Data["from"].(string), invalidMessage)
+	// not matched -> send fallback and re-run the same node (return nodeID)
+	to := fmt.Sprintf("%v", n.Data["from"])
+	if to != "" {
+		_ = wapp.SendWhatsAppMessage(to, fallback)
+	} else {
+		// try to get 'sender' from g or node data
+	}
 
-	// Wait again → keep looping until user gives correct input
+	log.Printf("⚠ quick-reply invalid input: %s", msg)
 	return n.ID, nil
 }
