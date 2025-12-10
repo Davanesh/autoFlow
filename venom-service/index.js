@@ -3,13 +3,12 @@ import http from "http";
 
 let client = null;
 
-// --- START VENOM SESSION ---
 venom
   .create({
     session: "autoflow",
     multidevice: true,
     logQR: true,
-    headless: false,  // Show browser → avoids timeout
+    headless: false,
     useChrome: true,
     disableInstanceLock: true,
     updatesLog: true,
@@ -26,11 +25,11 @@ venom
   })
   .then((c) => {
     client = c;
-    console.log("🔥 Venom client connected & ready!");
+    console.log("Venom client connected & ready!");
 
     // Listen for messages
     client.onMessage(async (msg) => {
-      console.log("📩 Incoming:", msg.from, msg.body);
+      console.log("Incoming:", msg.from, msg.body);
 
       // Forward to GO (localhost)
       sendToGoBackend({
@@ -39,7 +38,7 @@ venom
       });
     });
   })
-  .catch((err) => console.error("❌ Venom FAILED:", err));
+  .catch((err) => console.error("Venom FAILED:", err));
 
 
 // --- SEND MESSAGE TO GO BACKEND ---
@@ -63,7 +62,7 @@ function sendToGoBackend(json) {
   );
 
   req.on("error", (err) =>
-    console.log("❌ Go backend request failed:", err.message)
+    console.log("Go backend request failed:", err.message)
   );
 
   req.write(body);
